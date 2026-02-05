@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Galaxia Lunar</title>
+<style>
+html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+canvas { display:block; }
+</style>
+</head>
+
+<body>
+<canvas id="c"></canvas>
+
+<!-- Audio sin controles -->
+<audio id="audio" loop>
+  <source src="https://www.dropbox.com/scl/fi/v4eokp1f8nvwyowqym6ok/Trevor-Daniel-Falling-Official-Music-Video-mp3j.cc.mp3?raw=1" type="audio/mpeg">
+</audio>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.min.js"></script>
+<script>
+// ================= AUDIO: reproducir con primer click =================
+const audio = document.getElementById('audio');
+let audioStarted = false;
+
+function startAudioOnce(){
+  if(audioStarted) return;
+  audio.play().catch(()=>{});
+  audioStarted = true;
+  removeEventListener('click', startAudioOnce);
+  removeEventListener('touchstart', startAudioOnce);
+}
+
+addEventListener('click', startAudioOnce);
+addEventListener('touchstart', startAudioOnce);
+
+// ================= Escena =================
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.setSize(innerWidth,innerHeight);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,5000);
+let targetDist=300,currentDist=300,rotX=0.2,rotY=0;
+
+// Fondo
+const loader=new THREE.TextureLoader();
+scene.background=loader.load(
+'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/cube/space/px.jpg'
+);
+
+// Estrellas
+(function makeStars(count=2000,spread=3000){
+  const g=new THREE.BufferGeometry();
+  const pos=new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    const r=spread*(0.3+Math.random()*0.7);
+    const th=Math.random()*Math.PI*2;
+    const ph=Math.acos(2*Math.random()-1);
+    pos[i*3]=r*Math.sin(ph)*Math.cos(th);
+    pos[i*3+1]=r*Math.cos(ph);
+    pos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({size:1.5,color:0xffffff,depthWrite:false})));
+})();
+
+// 🌙 Núcleo (luna)
+const moonTex=loader.load(
+'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/moon_1024.jpg'
+);
+const core=new THREE.Mesh(
+  new THREE.SphereGeometry(40,64,64),
+  new THREE.MeshPhongMaterial({map:moonTex})
+);
+scene.add(core);
+
+// Luz
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+const light=new THREE.PointLight(0xbfdfff,1.2,800);
+light.position.set(200,200,200);
+scene.add(light);
+
+// Texto central
+function makeCenterTextTexture(msg){
+  const c=document.createElement('canvas');c.width=512;c.height=512;
+  const ctx=c.getContext('2d');
+  ctx.font='bold 80px Arial';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff';
+  ctx.shadowColor='#9fd3ff';ctx.shadowBlur=50;
+  ctx.fillText(msg,256,256);
+  return new THREE.CanvasTexture(c);
+}
+const centerSprite=new THREE.Sprite(
+  new THREE.SpriteMaterial({map:makeCenterTextTexture("TE AMO ❤️"),transparent:true})
+);
+centerSprite.scale.set(60,60,1);
+scene.add(centerSprite);
+
+// Glow frío
+function makeGlow(size=768){
+  const c=document.createElement('canvas');c.width=c.height=size;
+  const g=c.getContext('2d');
+  const grad=g.createRadialGradient(size/2,size/2,size*0.05,size/2,size/2,size*0.5);
+  grad.addColorStop(0,'rgba(200,230,255,0.9)');
+  grad.addColorStop(0.5,'rgba(120,180,255,0.5)');
+  grad.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=grad;g.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(c);
+}
+const glow=new THREE.Sprite(
+  new THREE.SpriteMaterial({map:makeGlow(),transparent:true,depthWrite:false})
+);
+glow.scale.set(500,500,1);
+scene.add(glow);
+
+// Anillos fríos
+function ringTexture(size=768){
+  const c=document.createElement('canvas');c.width=c.height=size;
+  const g=c.getContext('2d');g.translate(size/2,size/2);
+  const r1=size*0.34, r2=size*0.49;
+  const grd=g.createRadialGradient(0,0,r1*0.3,0,0,r2);
+  grd.addColorStop(0,'rgba(220,240,255,1)');
+  grd.addColorStop(0.3,'rgba(150,200,255,0.9)');
+  grd.addColorStop(0.65,'rgba(90,150,255,0.6)');
+  grd.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=grd;
+  g.beginPath();
+  g.arc(0,0,r2,0,Math.PI*2);
+  g.arc(0,0,r1,0,Math.PI*2,true);
+  g.closePath();g.fill();
+  return new THREE.CanvasTexture(c);
+}
+const ring1=new THREE.Mesh(new THREE.RingGeometry(60,80,128),
+  new THREE.MeshBasicMaterial({map:ringTexture(),transparent:true,side:THREE.DoubleSide}));
+const ring2=new THREE.Mesh(new THREE.RingGeometry(85,100,128),
+  new THREE.MeshBasicMaterial({map:ringTexture(),transparent:true,side:THREE.DoubleSide,opacity:0.6}));
+ring1.rotation.x=ring2.rotation.x=Math.PI/2;
+scene.add(ring1,ring2);
+
+// 💬 Frases
+const WORDS=[];
+const baseWords=[
+  '💙 Contigo todo es mejor','🌙 Mi lugar seguro','✨ Pensarte calma',
+  '🤍 Eres hogar','🌌 Me haces bien','💫 Siempre tú',
+  '🕊️ Paz contigo','🌙 Cada noche pienso en ti','💌 Elegirte diario',
+  '🌷 Cuidarte','⭐ Admirarte','🌊 Tu calma',
+  '🤗 Aquí me quedo','🌠 Gracias por existir','💞 Complicidad',
+  '🪐 Mi órbita eres tú','🍃 Tranquilidad','🤍 Amor bonito',
+  '🌙 Luna mía','✨ Mi suerte'
+];
+for(let i=0;i<6;i++) WORDS.push(...baseWords);
+
+function makeTextTexture(text,color){
+  const c=document.createElement('canvas');c.width=512;c.height=128;
+  const ctx=c.getContext('2d');
+  ctx.font='bold 60px Arial';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#fff';
+  ctx.shadowColor=color;ctx.shadowBlur=30;
+  ctx.fillText(text,256,64);
+  return new THREE.CanvasTexture(c);
+}
+const COLORS=['#cce9ff','#9fd3ff','#6fbaff','#ffffff','#b8dcff'];
+const textGroup=new THREE.Group();scene.add(textGroup);
+
+for(let i=0;i<WORDS.length;i++){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:makeTextTexture(WORDS[i],COLORS[i%COLORS.length]),
+    transparent:true
+  }));
+  sp.scale.set(50,16,1);
+  const phi=Math.acos(2*Math.random()-1);
+  const theta=Math.random()*Math.PI*2;
+  const r=150+Math.random()*120;
+  sp.position.set(
+    r*Math.sin(phi)*Math.cos(theta),
+    r*Math.cos(phi),
+    r*Math.sin(phi)*Math.sin(theta)
+  );
+  sp.userData={phi,theta,radius:r,speed:0.001+Math.random()*0.001};
+  textGroup.add(sp);
+}
+
+// Controles
+let dragging=false,lastX=0,lastY=0;
+addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  rotY-=(e.clientX-lastX)/innerWidth*3;
+  rotX=Math.max(-1.2,Math.min(1.2,rotX-(e.clientY-lastY)/innerHeight*2.2));
+  lastX=e.clientX;lastY=e.clientY;
+});
+addEventListener('mouseup',()=>dragging=false);
+addEventListener('wheel',e=>{
+  targetDist=Math.max(160,Math.min(600,targetDist+e.deltaY*0.25));
+},{passive:true});
+
+// Animación
+let t=0;
+function tick(){
+  requestAnimationFrame(tick);t+=0.01;
+  ring1.rotation.z+=0.002; ring2.rotation.z-=0.0015;
+  glow.scale.set(500*(1+Math.sin(t*0.4)*0.03),500*(1+Math.sin(t*0.4)*0.03),1);
+  const s=1+0.05*Math.sin(t*3); core.scale.set(s,s,s);
+  textGroup.children.forEach(sp=>{
+    sp.userData.theta+=sp.userData.speed;
+    sp.position.x=sp.userData.radius*Math.sin(sp.userData.phi)*Math.cos(sp.userData.theta);
+    sp.position.z=sp.userData.radius*Math.sin(sp.userData.phi)*Math.sin(sp.userData.theta);
+  });
+  currentDist+=(targetDist-currentDist)*0.06;
+  camera.position.set(
+    currentDist*Math.sin(rotY)*Math.cos(rotX),
+    currentDist*Math.sin(rotX),
+    currentDist*Math.cos(rotY)*Math.cos(rotX)
+  );
+  camera.lookAt(0,0,0);
+  renderer.render(scene,camera);
+}
+tick();
+</script>
+</body>
+</html>
